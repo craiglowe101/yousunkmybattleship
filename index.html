@@ -639,12 +639,20 @@
         // Audio Context for sound effects
         let audioCtx = null;
         function getAudioCtx() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.warn('AudioContext not available:', e.message);
+                    return null;
+                }
+            }
             return audioCtx;
         }
 
         function playSinkSound() {
             const ctx = getAudioCtx();
+            if (!ctx) return;
             const now = ctx.currentTime;
             // Deep boom
             const osc1 = ctx.createOscillator();
@@ -674,6 +682,7 @@
 
         function playBombSound() {
             const ctx = getAudioCtx();
+            if (!ctx) return;
             const now = ctx.currentTime;
             // Low rumble
             const osc1 = ctx.createOscillator();
@@ -724,6 +733,10 @@
 
         function renderShipSelector() {
             const selector = document.getElementById('shipSelector');
+            if (!selector) {
+                console.error('Ship selector element not found');
+                return;
+            }
             selector.innerHTML = '';
             
             playerShips.forEach((ship, index) => {
@@ -752,6 +765,10 @@
 
         function renderBoard(boardId, board, isSetup = false, showShips = true) {
             const boardElement = document.getElementById(boardId);
+            if (!boardElement) {
+                console.error(`Board element not found: "${boardId}"`);
+                return;
+            }
             boardElement.innerHTML = '';
             
             for (let row = 0; row < BOARD_SIZE; row++) {
@@ -877,7 +894,10 @@
         function placeShipsRandomly(board, ships) {
             ships.forEach(ship => {
                 let placed = false;
-                while (!placed) {
+                let attempts = 0;
+                const maxAttempts = 1000;
+                while (!placed && attempts < maxAttempts) {
+                    attempts++;
                     const row = Math.floor(Math.random() * BOARD_SIZE);
                     const col = Math.floor(Math.random() * BOARD_SIZE);
                     const horizontal = Math.random() > 0.5;
@@ -886,6 +906,10 @@
                         placeShip(board, row, col, ship.size, horizontal, ship.name);
                         placed = true;
                     }
+                }
+                if (!placed) {
+                    console.error(`Failed to place ${ship.name} after ${maxAttempts} attempts`);
+                    showMessage(`Error: Could not place ${ship.name}. Try again.`, 'error');
                 }
             });
         }
@@ -1073,14 +1097,23 @@
         }
 
         function attack(board, row, col, ships) {
+            if (!isValidCell(row, col)) {
+                console.error(`Attack out of bounds: row=${row}, col=${col}`);
+                return { hit: false, sunk: false };
+            }
+
             const cell = board[row][col];
             
             if (cell?.ship) {
                 cell.hit = true;
                 const ship = ships.find(s => s.name === cell.ship);
-                if (ship) ship.hits++;
+                if (!ship) {
+                    console.error(`Ship "${cell.ship}" not found in ships array`);
+                    return { hit: true, ship: cell.ship, sunk: false };
+                }
+                ship.hits++;
                 
-                const isSunk = ship && ship.hits === ship.size;
+                const isSunk = ship.hits >= ship.size;
                 if (isSunk) {
                     markSunk(board, ship.name);
                 }
@@ -1088,7 +1121,7 @@
                 return { hit: true, ship: cell.ship, sunk: isSunk };
             } else {
                 board[row][col] = { miss: true };
-                return { hit: false };
+                return { hit: false, sunk: false };
             }
         }
 
@@ -1113,6 +1146,12 @@
             
             if (difficulty === 'hard') {
                 const target = hardAIPick();
+                if (!target) {
+                    console.error('Hard AI could not find a valid target');
+                    isPlayerTurn = true;
+                    updateTurnIndicator();
+                    return;
+                }
                 row = target.row;
                 col = target.col;
             } else {
@@ -1121,10 +1160,19 @@
                     row = target.row;
                     col = target.col;
                 } else {
+                    let attempts = 0;
+                    const maxCells = BOARD_SIZE * BOARD_SIZE;
                     do {
                         row = Math.floor(Math.random() * BOARD_SIZE);
                         col = Math.floor(Math.random() * BOARD_SIZE);
-                    } while (aiVisitedCells.has(`${row},${col}`));
+                        attempts++;
+                    } while (aiVisitedCells.has(`${row},${col}`) && attempts < maxCells);
+                    if (attempts >= maxCells && aiVisitedCells.has(`${row},${col}`)) {
+                        console.error('AI has visited all cells, no valid target');
+                        isPlayerTurn = true;
+                        updateTurnIndicator();
+                        return;
+                    }
                 }
             }
             
@@ -1258,6 +1306,10 @@
                     }
                 }
             }
+            if (bestCells.length === 0) {
+                console.error('Hard AI: no unvisited cells remain');
+                return null;
+            }
             return bestCells[Math.floor(Math.random() * bestCells.length)];
         }
 
@@ -1306,6 +1358,7 @@
 
         function renderPlayerShipStatus() {
             const container = document.getElementById('playerShipStatus');
+            if (!container) return;
             container.innerHTML = '';
             
             playerShips.forEach(ship => {
@@ -1322,6 +1375,7 @@
 
         function renderAIShipStatus() {
             const container = document.getElementById('aiShipStatus');
+            if (!container) return;
             container.innerHTML = '';
             
             aiShips.forEach(ship => {
