@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';">
     <title>Battleship - Play Against AI</title>
     <style>
         * {
@@ -737,7 +738,7 @@
                 console.error('Ship selector element not found');
                 return;
             }
-            selector.innerHTML = '';
+            while (selector.firstChild) selector.removeChild(selector.firstChild);
             
             playerShips.forEach((ship, index) => {
                 const btn = document.createElement('button');
@@ -769,7 +770,7 @@
                 console.error(`Board element not found: "${boardId}"`);
                 return;
             }
-            boardElement.innerHTML = '';
+            while (boardElement.firstChild) boardElement.removeChild(boardElement.firstChild);
             
             for (let row = 0; row < BOARD_SIZE; row++) {
                 for (let col = 0; col < BOARD_SIZE; col++) {
@@ -1359,16 +1360,23 @@
         function renderPlayerShipStatus() {
             const container = document.getElementById('playerShipStatus');
             if (!container) return;
-            container.innerHTML = '';
+            while (container.firstChild) container.removeChild(container.firstChild);
             
             playerShips.forEach(ship => {
                 const isSunk = ship.hits === ship.size;
                 const item = document.createElement('div');
                 item.className = `ship-status-item ${isSunk ? 'sunk' : 'active'}`;
-                item.innerHTML = `
-                    <span class="ship-name">${ship.name} (${ship.size})</span>
-                    <span class="ship-status-indicator ${isSunk ? 'sunk' : 'active'}">${isSunk ? 'SUNK' : 'ACTIVE'}</span>
-                `;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'ship-name';
+                nameSpan.textContent = `${ship.name} (${ship.size})`;
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = `ship-status-indicator ${isSunk ? 'sunk' : 'active'}`;
+                statusSpan.textContent = isSunk ? 'SUNK' : 'ACTIVE';
+
+                item.appendChild(nameSpan);
+                item.appendChild(statusSpan);
                 container.appendChild(item);
             });
         }
@@ -1376,7 +1384,7 @@
         function renderAIShipStatus() {
             const container = document.getElementById('aiShipStatus');
             if (!container) return;
-            container.innerHTML = '';
+            while (container.firstChild) container.removeChild(container.firstChild);
             
             aiShips.forEach(ship => {
                 const isSunk = ship.hits === ship.size;
@@ -1394,10 +1402,17 @@
                 
                 const item = document.createElement('div');
                 item.className = `ship-status-item ${status}`;
-                item.innerHTML = `
-                    <span class="ship-name">${ship.name} (${ship.size})</span>
-                    <span class="ship-status-indicator ${status}">${statusText}</span>
-                `;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'ship-name';
+                nameSpan.textContent = `${ship.name} (${ship.size})`;
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = `ship-status-indicator ${status}`;
+                statusSpan.textContent = statusText;
+
+                item.appendChild(nameSpan);
+                item.appendChild(statusSpan);
                 container.appendChild(item);
             });
         }
