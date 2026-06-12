@@ -1,0 +1,12 @@
+{
+  "name": "yousunkmybattleship",
+  "version": "1.0.0",
+  "description": "Battleship game - Play Against AI",
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
