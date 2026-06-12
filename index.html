@@ -637,6 +637,24 @@
         let aiPotentialTargets = [];
         let aiVisitedCells = new Set();
 
+        // --- Shared Utilities ---
+
+        function createEmptyGrid(size) {
+            return Array(size).fill(null).map(() => Array(size).fill(null));
+        }
+
+        function createShipsList() {
+            return SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
+        }
+
+        function forEachCell(callback) {
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    callback(row, col);
+                }
+            }
+        }
+
         // Audio Context for sound effects
         let audioCtx = null;
         function getAudioCtx() {
@@ -651,70 +669,117 @@
             return audioCtx;
         }
 
-        function playSinkSound() {
+        function playTone({ type, freqStart, freqEnd, gainStart, duration }) {
             const ctx = getAudioCtx();
             if (!ctx) return;
             const now = ctx.currentTime;
-            // Deep boom
-            const osc1 = ctx.createOscillator();
-            const gain1 = ctx.createGain();
-            osc1.connect(gain1);
-            gain1.connect(ctx.destination);
-            osc1.type = 'sawtooth';
-            osc1.frequency.setValueAtTime(120, now);
-            osc1.frequency.exponentialRampToValueAtTime(30, now + 0.8);
-            gain1.gain.setValueAtTime(0.4, now);
-            gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
-            osc1.start(now);
-            osc1.stop(now + 0.8);
-            // High crack
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2);
-            gain2.connect(ctx.destination);
-            osc2.type = 'square';
-            osc2.frequency.setValueAtTime(400, now);
-            osc2.frequency.exponentialRampToValueAtTime(80, now + 0.3);
-            gain2.gain.setValueAtTime(0.3, now);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-            osc2.start(now);
-            osc2.stop(now + 0.3);
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = type;
+            osc.frequency.setValueAtTime(freqStart, now);
+            osc.frequency.exponentialRampToValueAtTime(freqEnd, now + duration);
+            gain.gain.setValueAtTime(gainStart, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            osc.start(now);
+            osc.stop(now + duration);
+        }
+
+        function playSound(tones) {
+            tones.forEach(playTone);
+        }
+
+        function playSinkSound() {
+            playSound([
+                { type: 'sawtooth', freqStart: 120, freqEnd: 30, gainStart: 0.4, duration: 0.8 },
+                { type: 'square', freqStart: 400, freqEnd: 80, gainStart: 0.3, duration: 0.3 }
+            ]);
         }
 
         function playBombSound() {
-            const ctx = getAudioCtx();
-            if (!ctx) return;
-            const now = ctx.currentTime;
-            // Low rumble
-            const osc1 = ctx.createOscillator();
-            const gain1 = ctx.createGain();
-            osc1.connect(gain1); gain1.connect(ctx.destination);
-            osc1.type = 'sawtooth';
-            osc1.frequency.setValueAtTime(80, now);
-            osc1.frequency.exponentialRampToValueAtTime(20, now + 1.2);
-            gain1.gain.setValueAtTime(0.6, now);
-            gain1.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-            osc1.start(now); osc1.stop(now + 1.2);
-            // Sharp crack
-            const osc2 = ctx.createOscillator();
-            const gain2 = ctx.createGain();
-            osc2.connect(gain2); gain2.connect(ctx.destination);
-            osc2.type = 'square';
-            osc2.frequency.setValueAtTime(600, now);
-            osc2.frequency.exponentialRampToValueAtTime(50, now + 0.5);
-            gain2.gain.setValueAtTime(0.5, now);
-            gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-            osc2.start(now); osc2.stop(now + 0.5);
-            // High whistle descending
-            const osc3 = ctx.createOscillator();
-            const gain3 = ctx.createGain();
-            osc3.connect(gain3); gain3.connect(ctx.destination);
-            osc3.type = 'sine';
-            osc3.frequency.setValueAtTime(1200, now);
-            osc3.frequency.exponentialRampToValueAtTime(200, now + 0.4);
-            gain3.gain.setValueAtTime(0.2, now);
-            gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-            osc3.start(now); osc3.stop(now + 0.4);
+            playSound([
+                { type: 'sawtooth', freqStart: 80, freqEnd: 20, gainStart: 0.6, duration: 1.2 },
+                { type: 'square', freqStart: 600, freqEnd: 50, gainStart: 0.5, duration: 0.5 },
+                { type: 'sine', freqStart: 1200, freqEnd: 200, gainStart: 0.2, duration: 0.4 }
+            ]);
+        }
+
+        function renderShipStatusList(containerId, ships, showUnknown) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            while (container.firstChild) container.removeChild(container.firstChild);
+
+            ships.forEach(ship => {
+                const isSunk = ship.hits === ship.size;
+                const isHit = ship.hits > 0;
+                let status, statusText;
+
+                if (isSunk) {
+                    status = 'sunk';
+                    statusText = 'SUNK';
+                } else if (showUnknown && !isHit) {
+                    status = 'unknown';
+                    statusText = 'UNKNOWN';
+                } else if (isHit) {
+                    status = 'active';
+                    statusText = 'HIT';
+                } else {
+                    status = 'active';
+                    statusText = 'ACTIVE';
+                }
+
+                const item = document.createElement('div');
+                item.className = `ship-status-item ${status}`;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'ship-name';
+                nameSpan.textContent = `${ship.name} (${ship.size})`;
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = `ship-status-indicator ${status}`;
+                statusSpan.textContent = statusText;
+
+                item.appendChild(nameSpan);
+                item.appendChild(statusSpan);
+                container.appendChild(item);
+            });
+        }
+
+        function refreshGameUI() {
+            renderBoard('playerBoardGame', playerBoard, false, true);
+            renderBoard('aiBoard', aiBoard, false, false);
+            updateStats();
+            renderShipStatus();
+            checkDangerState();
+        }
+
+        function processBombAttack(board, ships, row, col, visitedCells) {
+            const cells = getBombCells(row, col);
+            let hitCount = 0;
+            const sunkNames = [];
+
+            cells.forEach(([r, c]) => {
+                if (visitedCells) visitedCells.add(`${r},${c}`);
+                if (!board[r][c]?.hit && !board[r][c]?.miss) {
+                    const res = attack(board, r, c, ships);
+                    if (res.hit) {
+                        hitCount++;
+                        if (res.sunk && !sunkNames.includes(res.ship)) sunkNames.push(res.ship);
+                    }
+                }
+            });
+
+            return { hitCount, sunkNames, cells };
+        }
+
+        function setDangerFlash(elementId, shouldFlash) {
+            const el = document.getElementById(elementId);
+            if (shouldFlash) {
+                el.classList.add('danger-flash');
+            } else {
+                el.classList.remove('danger-flash');
+            }
         }
 
         // Initialize the game
@@ -726,10 +791,10 @@
         }
 
         function createEmptyBoards() {
-            playerBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            aiBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            playerShips = SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
-            aiShips = SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
+            playerBoard = createEmptyGrid(BOARD_SIZE);
+            aiBoard = createEmptyGrid(BOARD_SIZE);
+            playerShips = createShipsList();
+            aiShips = createShipsList();
         }
 
         function renderShipSelector() {
@@ -961,20 +1026,18 @@
 
         function startGame() {
             // Preserve player's ship placements, only reset AI board
-            aiBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            aiShips = SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
+            aiBoard = createEmptyGrid(BOARD_SIZE);
+            aiShips = createShipsList();
             placeShipsRandomly(aiBoard, aiShips);
             
             // Reset player ships hit state but keep placements
             playerShips.forEach(ship => ship.hits = 0);
-            for (let row = 0; row < BOARD_SIZE; row++) {
-                for (let col = 0; col < BOARD_SIZE; col++) {
-                    if (playerBoard[row][col]) {
-                        playerBoard[row][col].hit = false;
-                        playerBoard[row][col].sunk = false;
-                    }
+            forEachCell((row, col) => {
+                if (playerBoard[row][col]) {
+                    playerBoard[row][col].hit = false;
+                    playerBoard[row][col].sunk = false;
                 }
-            }
+            });
             
             // Reset game state
             isPlayerTurn = true;
@@ -1030,8 +1093,8 @@
 
             if (bombMode) {
                 // Bomb attack: hit center + all surrounding cells
-                const cells = getBombCells(row, col);
-                const alreadyAllHit = cells.every(([r, c]) => aiBoard[r][c]?.hit || aiBoard[r][c]?.miss);
+                const preCheckCells = getBombCells(row, col);
+                const alreadyAllHit = preCheckCells.every(([r, c]) => aiBoard[r][c]?.hit || aiBoard[r][c]?.miss);
                 if (alreadyAllHit) {
                     showMessage('All cells in that area already attacked!', 'error');
                     return;
@@ -1039,24 +1102,12 @@
                 playBombSound();
                 playerHasBomb = false;
                 bombMode = false;
-                let anyHit = false;
-                let sunkNames = [];
-                cells.forEach(([r, c]) => {
-                    if (!aiBoard[r][c]?.hit && !aiBoard[r][c]?.miss) {
-                        const result = attack(aiBoard, r, c, aiShips);
-                        if (result.hit) {
-                            playerHits++;
-                            anyHit = true;
-                            if (result.sunk && !sunkNames.includes(result.ship)) {
-                                sunkNames.push(result.ship);
-                            }
-                        }
-                    }
-                });
+                const { hitCount, sunkNames } = processBombAttack(aiBoard, aiShips, row, col, null);
+                playerHits += hitCount;
                 if (sunkNames.length > 0) {
                     showMessage(`💣 BOMB! You sank the AI's ${sunkNames.join(' & ')}!`, 'success');
                     playSinkSound();
-                } else if (anyHit) {
+                } else if (hitCount > 0) {
                     showMessage('💣 BOMB! Multiple hits!', 'success');
                 } else {
                     showMessage('💣 BOMB! All misses...', 'info');
@@ -1081,10 +1132,7 @@
                 }
             }
 
-            renderBoard('aiBoard', aiBoard, false, false);
-            updateStats();
-            renderShipStatus();
-            checkDangerState();
+            refreshGameUI();
             
             if (checkWin(aiShips)) {
                 endGame(true);
@@ -1127,13 +1175,11 @@
         }
 
         function markSunk(board, shipName) {
-            for (let row = 0; row < BOARD_SIZE; row++) {
-                for (let col = 0; col < BOARD_SIZE; col++) {
-                    if (board[row][col]?.ship === shipName) {
-                        board[row][col].sunk = true;
-                    }
+            forEachCell((row, col) => {
+                if (board[row][col]?.ship === shipName) {
+                    board[row][col].sunk = true;
                 }
-            }
+            });
         }
 
         function checkWin(ships) {
@@ -1180,30 +1226,17 @@
             // AI uses bomb if it has one and has a hit to follow up on, or randomly
             if (aiHasBomb && (aiHuntMode || Math.random() < 0.2)) {
                 aiHasBomb = false;
-                const bombCells = getBombCells(row, col);
                 playBombSound();
                 showMessage('💣 AI used the Big Bomb on your fleet!', 'error');
-                let sunkNames = [];
-                bombCells.forEach(([r, c]) => {
-                    aiVisitedCells.add(`${r},${c}`);
-                    if (!playerBoard[r][c]?.hit && !playerBoard[r][c]?.miss) {
-                        const res = attack(playerBoard, r, c, playerShips);
-                        if (res.hit) {
-                            aiHits++;
-                            if (res.sunk && !sunkNames.includes(res.ship)) sunkNames.push(res.ship);
-                        }
-                    }
-                });
+                const { hitCount, sunkNames } = processBombAttack(playerBoard, playerShips, row, col, aiVisitedCells);
+                aiHits += hitCount;
                 if (sunkNames.length > 0) {
                     showMessage(`💣 AI BOMB! Sank your ${sunkNames.join(' & ')}!`, 'error');
                     playSinkSound();
                     aiHuntMode = false;
                     aiPotentialTargets = [];
                 }
-                renderBoard('playerBoardGame', playerBoard, false, true);
-                updateStats();
-                renderShipStatus();
-                checkDangerState();
+                refreshGameUI();
                 if (checkWin(playerShips)) { endGame(false); return; }
                 isPlayerTurn = true;
                 updateTurnIndicator();
@@ -1242,10 +1275,7 @@
                 }
             }
             
-            renderBoard('playerBoardGame', playerBoard, false, true);
-            updateStats();
-            renderShipStatus();
-            checkDangerState();
+            refreshGameUI();
             
             if (checkWin(playerShips)) {
                 endGame(false);
@@ -1264,7 +1294,7 @@
             }
 
             // Build probability density grid
-            const density = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+            const density = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
             const remainingShips = playerShips.filter(s => s.hits < s.size);
 
             for (const ship of remainingShips) {
@@ -1317,21 +1347,8 @@
         function checkDangerState() {
             const playerAlive = playerShips.filter(s => s.hits < s.size).length;
             const aiAlive = aiShips.filter(s => s.hits < s.size).length;
-
-            const playerBoard_el = document.getElementById('playerBoardGame');
-            const aiBoard_el = document.getElementById('aiBoard');
-
-            if (playerAlive === 1) {
-                playerBoard_el.classList.add('danger-flash');
-            } else {
-                playerBoard_el.classList.remove('danger-flash');
-            }
-
-            if (aiAlive === 1) {
-                aiBoard_el.classList.add('danger-flash');
-            } else {
-                aiBoard_el.classList.remove('danger-flash');
-            }
+            setDangerFlash('playerBoardGame', playerAlive === 1);
+            setDangerFlash('aiBoard', aiAlive === 1);
         }
 
         function updateTurnIndicator() {
@@ -1353,68 +1370,8 @@
         }
 
         function renderShipStatus() {
-            renderPlayerShipStatus();
-            renderAIShipStatus();
-        }
-
-        function renderPlayerShipStatus() {
-            const container = document.getElementById('playerShipStatus');
-            if (!container) return;
-            while (container.firstChild) container.removeChild(container.firstChild);
-            
-            playerShips.forEach(ship => {
-                const isSunk = ship.hits === ship.size;
-                const item = document.createElement('div');
-                item.className = `ship-status-item ${isSunk ? 'sunk' : 'active'}`;
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'ship-name';
-                nameSpan.textContent = `${ship.name} (${ship.size})`;
-
-                const statusSpan = document.createElement('span');
-                statusSpan.className = `ship-status-indicator ${isSunk ? 'sunk' : 'active'}`;
-                statusSpan.textContent = isSunk ? 'SUNK' : 'ACTIVE';
-
-                item.appendChild(nameSpan);
-                item.appendChild(statusSpan);
-                container.appendChild(item);
-            });
-        }
-
-        function renderAIShipStatus() {
-            const container = document.getElementById('aiShipStatus');
-            if (!container) return;
-            while (container.firstChild) container.removeChild(container.firstChild);
-            
-            aiShips.forEach(ship => {
-                const isSunk = ship.hits === ship.size;
-                const isHit = ship.hits > 0;
-                let status = 'unknown';
-                let statusText = 'UNKNOWN';
-                
-                if (isSunk) {
-                    status = 'sunk';
-                    statusText = 'SUNK';
-                } else if (isHit) {
-                    status = 'active';
-                    statusText = 'HIT';
-                }
-                
-                const item = document.createElement('div');
-                item.className = `ship-status-item ${status}`;
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'ship-name';
-                nameSpan.textContent = `${ship.name} (${ship.size})`;
-
-                const statusSpan = document.createElement('span');
-                statusSpan.className = `ship-status-indicator ${status}`;
-                statusSpan.textContent = statusText;
-
-                item.appendChild(nameSpan);
-                item.appendChild(statusSpan);
-                container.appendChild(item);
-            });
+            renderShipStatusList('playerShipStatus', playerShips, false);
+            renderShipStatusList('aiShipStatus', aiShips, true);
         }
 
         function showMessage(text, type) {
@@ -1466,10 +1423,7 @@
             document.getElementById('startGameBtn').disabled = true;
             
             // Full reset - clear boards and ships so player can re-place
-            playerBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            aiBoard = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            playerShips = SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
-            aiShips = SHIPS.map(ship => ({ ...ship, placed: false, hits: 0 }));
+            createEmptyBoards();
             selectedShip = null;
             isHorizontal = true;
             document.getElementById('rotateBtn').textContent = 'Rotate (Horizontal)';
@@ -1479,8 +1433,8 @@
             showMessage('', 'info');
 
             // Clear danger flash
-            document.getElementById('playerBoardGame').classList.remove('danger-flash');
-            document.getElementById('aiBoard').classList.remove('danger-flash');
+            setDangerFlash('playerBoardGame', false);
+            setDangerFlash('aiBoard', false);
         }
 
         // Start the game
