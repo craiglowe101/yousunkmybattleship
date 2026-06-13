@@ -1240,6 +1240,7 @@
                 if (checkWin(playerShips)) { endGame(false); return; }
                 isPlayerTurn = true;
                 updateTurnIndicator();
+                renderBoard('aiBoard', aiBoard, false, false);
                 return;
             }
 
@@ -1284,6 +1285,7 @@
             
             isPlayerTurn = true;
             updateTurnIndicator();
+            renderBoard('aiBoard', aiBoard, false, false);
         }
 
         function hardAIPick() {
